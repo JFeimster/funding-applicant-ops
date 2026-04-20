@@ -1,0 +1,226 @@
+{
+  "name": "Funding Applicants | Gmail Parser",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "((\"Submission Started\") OR (\"Application Incomplete\") OR (\"Client File Closed\") OR (Giggle) OR (BankBreezy) OR (funded) OR (approved) OR (under review)) newer_than:7d"
+        },
+        "options": {}
+      },
+      "id": "GmailTrigger_1",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [
+        260,
+        320
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json;\n\nconst subject = raw.subject || '';\nconst snippet = raw.snippet || '';\nconst textBody = raw.textPlain || raw.textHtml || raw.bodyPlain || raw.bodyHtml || '';\nconst body = `${snippet}\\n${textBody}`;\nconst from = raw.from || '';\nconst messageId = raw.id || raw.messageId || '';\nconst threadId = raw.threadId || '';\n\nfunction matchOne(patterns, text) {\n  for (const p of patterns) {\n    const m = text.match(p);\n    if (m && m[1]) return m[1].trim();\n  }\n  return '';\n}\n\nfunction cleanPhone(phone) {\n  return phone ? phone.replace(/\\s+/g, ' ').trim() : '';\n}\n\nconst lowerBody = body.toLowerCase();\nconst lowerSubject = subject.toLowerCase();\n\nlet status = '';\nif (/submission started/.test(lowerSubject) || /submission started/.test(lowerBody)) status = 'Submission started';\nelse if (/application incomplete/.test(lowerSubject) || /application incomplete/.test(lowerBody)) status = 'Application incomplete';\nelse if (/client file closed/.test(lowerSubject) || /client file closed/.test(lowerBody)) status = 'Client file closed';\nelse if (/funded/.test(lowerSubject) || /funded/.test(lowerBody)) status = 'Funded';\nelse if (/approved/.test(lowerSubject) || /approved/.test(lowerBody)) status = 'Approved';\nelse if (/under review/.test(lowerSubject) || /under review/.test(lowerBody) || /in review/.test(lowerBody)) status = 'Under review';\nelse status = 'Unknown';\n\nlet routeDetected = 'Unknown';\nif (/giggle/.test(lowerBody) || /giggle/.test(lowerSubject)) routeDetected = 'Giggle Finance';\nif (/bankbreezy/.test(lowerBody) || /bankbreezy/.test(lowerSubject)) routeDetected = 'BankBreezy';\n\nconst applicantEmail = matchOne([\n  /([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,})/i,\n  /email\\s*[:\\-]\\s*([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,})/i\n], body);\n\nconst applicantName = matchOne([\n  /name\\s*[:\\-]\\s*([^\\n\\r]+)/i,\n  /applicant\\s*[:\\-]\\s*([^\\n\\r]+)/i,\n  /customer\\s*[:\\-]\\s*([^\\n\\r]+)/i\n], body);\n\nconst phone = cleanPhone(matchOne([\n  /phone\\s*[:\\-]\\s*([^\\n\\r]+)/i,\n  /mobile\\s*[:\\-]\\s*([^\\n\\r]+)/i,\n /(\\(?\\d{3}\\)?[-.\\s]?\\d{3}[-.\\s]?\\d{4})/\n], body));\n\nconst revenue = matchOne([\n  /\\$\\s?([\\d,]+)\\s*(?:\\/month|per month|monthly)/i,\n  /monthly revenue\\s*[:\\-]\\s*\\$?\\s*([\\d,]+)/i,\n  /revenue\\s*[:\\-]\\s*\\$?\\s*([\\d,]+)/i\n], body).replace(/,/g, '');\n\nlet bankType = '';\nif (/personal bank/.test(lowerBody) || /personal account/.test(lowerBody)) bankType = 'Personal';\nif (/business bank/.test(lowerBody) || /business account/.test(lowerBody)) bankType = 'Business';\n\nconst businessName = matchOne([\n  /business name\\s*[:\\-]\\s*([^\\n\\r]+)/i,\n  /company\\s*[:\\-]\\s*([^\\n\\r]+)/i\n], body);\n\nconst source = from || 'Gmail Applicant Intake';\n\nconst candidate = {\n  source,\n  emailSubject: subject,\n  applicantName,\n  applicantEmail,\n  phone,\n  businessName,\n  routeDetected,\n  revenue,\n  bankType,\n  status,\n  firstReplySent: false,\n  messageId,\n  threadId,\n  notes: `Parsed from Gmail. Sender: ${from}`,\n  rawBodyPreview: body.slice(0, 1200)\n};\n\nreturn [candidate];"
+      },
+      "id": "Code_1",
+      "name": "Parse Applicant Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.applicantEmail}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "IF_1",
+      "name": "Has Applicant Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        820,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_N8N_HOST/webhook/funding-applicant-intake",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"source\": \"{{$json.source}}\",\n  \"emailSubject\": \"{{$json.emailSubject}}\",\n  \"applicantName\": \"{{$json.applicantName}}\",\n  \"applicantEmail\": \"{{$json.applicantEmail}}\",\n  \"phone\": \"{{$json.phone}}\",\n  \"businessName\": \"{{$json.businessName}}\",\n  \"routeDetected\": \"{{$json.routeDetected}}\",\n  \"revenue\": \"{{$json.revenue}}\",\n  \"bankType\": \"{{$json.bankType}}\",\n  \"status\": \"{{$json.status}}\",\n  \"firstReplySent\": false,\n  \"messageId\": \"{{$json.messageId}}\",\n  \"threadId\": \"{{$json.threadId}}\",\n  \"notes\": \"{{$json.notes}}\"\n}",
+        "options": {}
+      },
+      "id": "HTTP_1",
+      "name": "Send to HubSpot Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1080,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_N8N_HOST/webhook/funding-applicant-intake",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"source\": \"{{$json.source}}\",\n  \"emailSubject\": \"{{$json.emailSubject}}\",\n  \"applicantName\": \"{{$json.applicantName}}\",\n  \"applicantEmail\": \"{{$json.applicantEmail}}\",\n  \"phone\": \"{{$json.phone}}\",\n  \"businessName\": \"{{$json.businessName}}\",\n  \"routeDetected\": \"{{$json.routeDetected}}\",\n  \"revenue\": \"{{$json.revenue}}\",\n  \"bankType\": \"{{$json.bankType}}\",\n  \"status\": \"{{$json.status}}\",\n  \"firstReplySent\": true,\n  \"messageId\": \"{{$json.messageId}}\",\n  \"threadId\": \"{{$json.threadId}}\",\n  \"notes\": \"Parsed from Gmail. Status suggests this applicant may already be in active follow-up.\"\n}",
+        "options": {}
+      },
+      "id": "HTTP_2",
+      "name": "Send to HubSpot Workflow (Already Replied)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1080,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.status}}",
+              "operation": "regex",
+              "value2": "Submission started|Application incomplete|Under review"
+            }
+          ]
+        }
+      },
+      "id": "IF_2",
+      "name": "Needs Active Follow-Up?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": true,\n  \"message\": \"Email did not contain a confidently parsed applicant email; skipped.\",\n  \"subject\": \"{{$json.emailSubject}}\",\n  \"from\": \"{{$json.source}}\"\n}"
+      },
+      "id": "Respond_1",
+      "name": "Respond Skipped",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Applicant Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Applicant Email": {
+      "main": [
+        [
+          {
+            "node": "Has Applicant Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Applicant Email?": {
+      "main": [
+        [
+          {
+            "node": "Needs Active Follow-Up?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Active Follow-Up?": {
+      "main": [
+        [
+          {
+            "node": "Send to HubSpot Workflow (Already Replied)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send to HubSpot Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "gmail-parser-funding-applicants-v1"
+}
