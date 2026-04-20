@@ -1,0 +1,85 @@
+# `assets/sample-webhook-payloads.json`
+
+```json id="cm0szm"
+[
+  {
+    "source": "DAC Applicant Automation",
+    "emailSubject": "Submission Started",
+    "applicantName": "Drid Guillaume",
+    "applicantEmail": "dr.drid11@gmail.com",
+    "phone": "(267) 880-7813",
+    "businessName": "",
+    "routeDetected": "Giggle Finance",
+    "revenue": "3000",
+    "bankType": "Personal",
+    "status": "Submission started",
+    "firstReplySent": true,
+    "messageId": "gmail-msg-drid-001",
+    "threadId": "gmail-thread-drid-001",
+    "notes": "Real specimen-style test payload based on applicant start event."
+  },
+  {
+    "source": "DAC Applicant Automation",
+    "emailSubject": "Application Incomplete",
+    "applicantName": "Amanda Lewis",
+    "applicantEmail": "amanda.lewis@example.com",
+    "phone": "(404) 555-1102",
+    "businessName": "Amanda Creative Studio",
+    "routeDetected": "Giggle Finance",
+    "revenue": "4200",
+    "bankType": "Personal",
+    "status": "Application incomplete",
+    "firstReplySent": true,
+    "messageId": "gmail-msg-amanda-002",
+    "threadId": "gmail-thread-amanda-002",
+    "notes": "Use this to test incomplete-app state and task generation."
+  },
+  {
+    "source": "BankBreezy Status Email",
+    "emailSubject": "Under Review",
+    "applicantName": "Marcus Hill",
+    "applicantEmail": "marcus.hill@example.com",
+    "phone": "(312) 555-2091",
+    "businessName": "Hill Transport LLC",
+    "routeDetected": "BankBreezy",
+    "revenue": "18000",
+    "bankType": "Business",
+    "status": "Under review",
+    "firstReplySent": true,
+    "messageId": "gmail-msg-marcus-003",
+    "threadId": "gmail-thread-marcus-003",
+    "notes": "Use this to test in-review routing and deal update behavior."
+  },
+  {
+    "source": "Giggle Finance Status Email",
+    "emailSubject": "Funded",
+    "applicantName": "Tasha Monroe",
+    "applicantEmail": "tasha.monroe@example.com",
+    "phone": "(713) 555-3017",
+    "businessName": "Monroe Mobile Beauty",
+    "routeDetected": "Giggle Finance",
+    "revenue": "5500",
+    "bankType": "Personal",
+    "status": "Funded",
+    "firstReplySent": true,
+    "messageId": "gmail-msg-tasha-004",
+    "threadId": "gmail-thread-tasha-004",
+    "notes": "Use this to test funded deal stage mapping and no-chase behavior."
+  },
+  {
+    "source": "DAC Applicant Automation",
+    "emailSubject": "Client File Closed",
+    "applicantName": "Evan Price",
+    "applicantEmail": "evan.price@example.com",
+    "phone": "(919) 555-4882",
+    "businessName": "Price Home Services",
+    "routeDetected": "Unknown",
+    "revenue": "0",
+    "bankType": "Unknown",
+    "status": "Client file closed",
+    "firstReplySent": true,
+    "messageId": "gmail-msg-evan-005",
+    "threadId": "gmail-thread-evan-005",
+    "notes": "Use this to test dead/lost handling."
+  }
+]
