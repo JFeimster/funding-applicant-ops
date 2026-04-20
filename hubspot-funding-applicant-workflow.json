@@ -1,0 +1,474 @@
+{
+  "name": "Funding Applicants | Gmail to HubSpot",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "funding-applicant-intake",
+        "httpMethod": "POST",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "Webhook_1",
+      "name": "Webhook Intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\n\nfunction clean(v) {\n  if (v === undefined || v === null) return '';\n  return String(v).trim();\n}\n\nconst applicantName = clean(body.applicantName);\nconst applicantEmail = clean(body.applicantEmail).toLowerCase();\nconst phone = clean(body.phone);\nconst businessName = clean(body.businessName);\nconst routeDetected = clean(body.routeDetected) || 'Unknown';\nconst source = clean(body.source) || 'DAC Applicant Automation';\nconst emailSubject = clean(body.emailSubject);\nconst revenue = clean(body.revenue);\nconst bankType = clean(body.bankType);\nconst status = clean(body.status) || 'Submission started';\nconst firstReplySent = body.firstReplySent === true || String(body.firstReplySent).toLowerCase() === 'true';\nconst notes = clean(body.notes);\nconst gmailMessageId = clean(body.messageId);\nconst gmailThreadId = clean(body.threadId);\n\nlet priority = 'medium';\nif (/incomplete|needs action|missing/i.test(status)) priority = 'high';\nif (/funded|closed/i.test(status)) priority = 'low';\nif (/submission started/i.test(status) && firstReplySent) priority = 'high';\n\nlet nextStep = 'Review route';\nif (firstReplySent) nextStep = 'Waiting on applicant reply';\nif (/incomplete|missing/i.test(status)) nextStep = 'Need docs';\nif (/bank/i.test(status)) nextStep = 'Need bank link';\nif (/review|underwriting/i.test(status)) nextStep = 'Await provider review';\nif (/other options/i.test(status)) nextStep = 'Send other options';\nif (/funded/i.test(status)) nextStep = 'None';\n\nlet dealStage = 'qualifiedtobuy';\nif (/incomplete|missing|waiting/i.test(status)) dealStage = 'presentationscheduled';\nif (/review|underwriting/i.test(status)) dealStage = 'decisionmakerboughtin';\nif (/funded/i.test(status)) dealStage = 'closedwon';\nif (/dead|lost|withdrawn|not now/i.test(status)) dealStage = 'closedlost';\n\nconst routeShort = /giggle/i.test(routeDetected) ? 'Giggle' : /bankbreezy/i.test(routeDetected) ? 'BankBreezy' : 'Unknown';\nconst dealName = `${applicantName} | DAC Applicant | ${routeShort}`;\n\nconst description = [\n  `Source: ${source}`,\n  `Original email subject: ${emailSubject}`,\n  `Applicant email: ${applicantEmail}`,\n  `Owner phone: ${phone}`,\n  `Business name: ${businessName || 'Not yet confirmed'}`,\n  `Route detected: ${routeDetected}`,\n  `Revenue: ${revenue || 'Unknown'}`,\n  `Bank type: ${bankType || 'Unknown'}`,\n  `Current blocker: ${/incomplete|missing/i.test(status) ? 'Application incomplete' : 'None confirmed yet'}`,\n  `Last meaningful update: ${firstReplySent ? 'First reply sent; awaiting response' : status}`,\n  `Notes: ${notes || 'Auto-created from applicant intake workflow.'}`,\n  `Gmail Message ID: ${gmailMessageId}`,\n  `Gmail Thread ID: ${gmailThreadId}`\n].join('\\n');\n\nreturn [{\n  applicantName,\n  applicantEmail,\n  phone,\n  businessName,\n  routeDetected,\n  routeShort,\n  source,\n  emailSubject,\n  revenue,\n  bankType,\n  status,\n  firstReplySent,\n  notes,\n  gmailMessageId,\n  gmailThreadId,\n  priority,\n  nextStep,\n  dealStage,\n  dealName,\n  description,\n  pipeline: 'default',\n  dealType: 'newbusiness',\n  hubspotOwnerId: '41491296'\n}];"
+      },
+      "id": "Code_1",
+      "name": "Normalize Applicant Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"filterGroups\": [\n    {\n      \"filters\": [\n        {\n          \"propertyName\": \"email\",\n          \"operator\": \"EQ\",\n          \"value\": \"{{$json.applicantEmail}}\"\n        }\n      ]\n    }\n  ],\n  \"properties\": [\"firstname\", \"lastname\", \"email\", \"phone\"],\n  \"limit\": 1\n}",
+        "options": {}
+      },
+      "id": "HTTP_ContactSearch",
+      "name": "HubSpot Search Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_HUBSPOT_CREDENTIAL_ID",
+          "name": "HubSpot Private App / OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = $json.results || [];\nconst contact = results[0] || null;\nreturn [{\n  ...$('Normalize Applicant Payload').first().json,\n  contactFound: !!contact,\n  contactId: contact ? contact.id : null,\n  contactRecord: contact\n}];"
+      },
+      "id": "Code_ContactFound",
+      "name": "Set Contact Match",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/deals/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"filterGroups\": [\n    {\n      \"filters\": [\n        {\n          \"propertyName\": \"dealname\",\n          \"operator\": \"CONTAINS_TOKEN\",\n          \"value\": \"{{$json.applicantName}}\"\n        }\n      ]\n    },\n    {\n      \"filters\": [\n        {\n          \"propertyName\": \"description\",\n          \"operator\": \"CONTAINS_TOKEN\",\n          \"value\": \"{{$json.applicantEmail}}\"\n        }\n      ]\n    }\n  ],\n  \"properties\": [\"dealname\", \"dealstage\", \"pipeline\", \"description\", \"hs_next_step\", \"hs_priority\"],\n  \"limit\": 5\n}",
+        "options": {}
+      },
+      "id": "HTTP_DealSearch",
+      "name": "HubSpot Search Deal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_HUBSPOT_CREDENTIAL_ID",
+          "name": "HubSpot Private App / OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const dealResults = $json.results || [];\nconst applicantEmail = $('Set Contact Match').first().json.applicantEmail;\nconst applicantName = $('Set Contact Match').first().json.applicantName;\n\nlet exactMatch = null;\nfor (const d of dealResults) {\n  const desc = (d.properties?.description || '').toLowerCase();\n  const name = (d.properties?.dealname || '').toLowerCase();\n  if (desc.includes(applicantEmail.toLowerCase()) || name.includes(applicantName.toLowerCase())) {\n    exactMatch = d;\n    break;\n  }\n}\n\nreturn [{\n  ...$('Set Contact Match').first().json,\n  dealFound: !!exactMatch,\n  dealId: exactMatch ? exactMatch.id : null,\n  dealRecord: exactMatch,\n  rawDealSearchResults: dealResults\n}];"
+      },
+      "id": "Code_Dedupe",
+      "name": "Apply Dedupe Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1580,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.dealFound}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "IF_DealExists",
+      "name": "Deal Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.hubapi.com/crm/v3/objects/deals/{{$json.dealId}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"properties\": {\n    \"dealname\": \"{{$json.dealName}}\",\n    \"dealstage\": \"{{$json.dealStage}}\",\n    \"pipeline\": \"{{$json.pipeline}}\",\n    \"dealtype\": \"{{$json.dealType}}\",\n    \"hs_priority\": \"{{$json.priority}}\",\n    \"description\": \"{{$json.description}}\",\n    \"hs_next_step\": \"{{$json.nextStep}}\",\n    \"hubspot_owner_id\": \"{{$json.hubspotOwnerId}}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "HTTP_UpdateDeal",
+      "name": "Update Existing Deal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2060,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_HUBSPOT_CREDENTIAL_ID",
+          "name": "HubSpot Private App / OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/deals",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"properties\": {\n    \"dealname\": \"{{$json.dealName}}\",\n    \"dealstage\": \"{{$json.dealStage}}\",\n    \"pipeline\": \"{{$json.pipeline}}\",\n    \"dealtype\": \"{{$json.dealType}}\",\n    \"hs_priority\": \"{{$json.priority}}\",\n    \"description\": \"{{$json.description}}\",\n    \"hs_next_step\": \"{{$json.nextStep}}\",\n    \"hubspot_owner_id\": \"{{$json.hubspotOwnerId}}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "HTTP_CreateDeal",
+      "name": "Create New Deal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2060,
+        420
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_HUBSPOT_CREDENTIAL_ID",
+          "name": "HubSpot Private App / OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $input.first().json;\nconst normalized = $('Apply Dedupe Logic').first().json;\n\nconst dealId = source.id || normalized.dealId;\n\nreturn [{\n  ...normalized,\n  finalDealId: dealId,\n  actionTaken: normalized.dealFound ? 'updated' : 'created'\n}];"
+      },
+      "id": "Code_SetFinalDeal",
+      "name": "Set Final Deal ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.nextStep}}",
+              "operation": "notEqual",
+              "value2": "None"
+            }
+          ]
+        }
+      },
+      "id": "IF_CreateTasks",
+      "name": "Should Create Tasks?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\nconst now = new Date();\n\nfunction addDays(days) {\n  const d = new Date(now);\n  d.setDate(d.getDate() + days);\n  d.setHours(12,0,0,0);\n  return d.toISOString();\n}\n\nconst tasks = [];\n\nif (data.firstReplySent) {\n  tasks.push({ subject: `${data.applicantName} — Follow-up #2 (Group + Resources)`, body: 'Send Email 2: invite to Funding Applicants Hub + resources + secondary engagement path.', due: addDays(2) });\n  tasks.push({ subject: `${data.applicantName} — Follow-up #3 (Alt options nudge)`, body: 'Send Email 3: soft nudge + offer alternative funding paths.', due: addDays(4) });\n  tasks.push({ subject: `${data.applicantName} — Follow-up #4 (Simplify + friction removal)`, body: 'Send Email 4: simplify process + reduce friction + quick reply prompt.', due: addDays(7) });\n  tasks.push({ subject: `${data.applicantName} — Final follow-up / close loop`, body: 'Send Email 5: final bump + open loop + soft exit.', due: addDays(12) });\n} else {\n  tasks.push({ subject: `${data.applicantName} — Send first reply`, body: 'Send first follow-up email to applicant.', due: addDays(0) });\n  tasks.push({ subject: `${data.applicantName} — Follow-up #2`, body: 'Follow up after first reply if no response.', due: addDays(2) });\n}\n\nreturn tasks.map(t => ({\n  ...data,\n  taskSubject: t.subject,\n  taskBody: t.body,\n  taskDue: t.due\n}));"
+      },
+      "id": "Code_BuildTasks",
+      "name": "Build Task Sequence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2820,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/tasks",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"properties\": {\n    \"hs_task_subject\": \"{{$json.taskSubject}}\",\n    \"hs_task_body\": \"{{$json.taskBody}}\",\n    \"hs_timestamp\": \"{{$json.taskDue}}\",\n    \"hubspot_owner_id\": \"{{$json.hubspotOwnerId}}\"\n  },\n  \"associations\": [\n    {\n      \"to\": {\n        \"id\": \"{{$json.finalDealId}}\"\n      },\n      \"types\": [\n        {\n          \"associationCategory\": \"HUBSPOT_DEFINED\",\n          \"associationTypeId\": 216\n        }\n      ]\n    },\n    {\n      \"to\": {\n        \"id\": \"{{$json.contactId}}\"\n      },\n      \"types\": [\n        {\n          \"associationCategory\": \"HUBSPOT_DEFINED\",\n          \"associationTypeId\": 204\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "HTTP_CreateTask",
+      "name": "Create HubSpot Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_HUBSPOT_CREDENTIAL_ID",
+          "name": "HubSpot Private App / OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": true,\n  \"applicantName\": \"{{$('Set Final Deal ID').first().json.applicantName}}\",\n  \"applicantEmail\": \"{{$('Set Final Deal ID').first().json.applicantEmail}}\",\n  \"contactId\": \"{{$('Set Final Deal ID').first().json.contactId}}\",\n  \"dealId\": \"{{$('Set Final Deal ID').first().json.finalDealId}}\",\n  \"actionTaken\": \"{{$('Set Final Deal ID').first().json.actionTaken}}\",\n  \"tasksCreated\": {{ $items('Create HubSpot Task').length || 0 }},\n  \"routeDetected\": \"{{$('Set Final Deal ID').first().json.routeDetected}}\",\n  \"dealStage\": \"{{$('Set Final Deal ID').first().json.dealStage}}\",\n  \"nextStep\": \"{{$('Set Final Deal ID').first().json.nextStep}}\"\n}"
+      },
+      "id": "Respond_1",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        3360,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Intake": {
+      "main": [
+        [
+          {
+            "node": "Normalize Applicant Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Applicant Payload": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Search Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Search Contact": {
+      "main": [
+        [
+          {
+            "node": "Set Contact Match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Contact Match": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Search Deal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Search Deal": {
+      "main": [
+        [
+          {
+            "node": "Apply Dedupe Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Dedupe Logic": {
+      "main": [
+        [
+          {
+            "node": "Deal Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deal Exists?": {
+      "main": [
+        [
+          {
+            "node": "Update Existing Deal",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create New Deal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Existing Deal": {
+      "main": [
+        [
+          {
+            "node": "Set Final Deal ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create New Deal": {
+      "main": [
+        [
+          {
+            "node": "Set Final Deal ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Final Deal ID": {
+      "main": [
+        [
+          {
+            "node": "Should Create Tasks?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Create Tasks?": {
+      "main": [
+        [
+          {
+            "node": "Build Task Sequence",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Task Sequence": {
+      "main": [
+        [
+          {
+            "node": "Create HubSpot Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create HubSpot Task": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "funding-applicants-gmail-hubspot-v1"
+}
